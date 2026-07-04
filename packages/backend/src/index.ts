@@ -3,6 +3,7 @@ import cors from 'cors';
 import * as dotenv from 'dotenv';
 import { fetchYoutubeTranscript } from './utils/transcript.js';
 import { analyzeTranscript } from './utils/ai.js';
+import { fetchWhaleTweets, fetchRedditPosts } from './utils/social.js';
 import { 
   getAgentAddress, 
   getAgentBalance, 
@@ -179,6 +180,111 @@ app.post('/api/analyze', async (req, res) => {
   } catch (error: any) {
     console.error('[API] Error in analysis pipeline:', error);
     res.status(500).json({ error: error.message || 'Pipeline processing failed' });
+  }
+});
+
+// Endpoint to fetch, analyze, and trade on social media whale accounts (Twitter / Reddit)
+app.post('/api/analyze-social', async (req, res) => {
+  const { twitterHandles, subreddits } = req.body; // Array of handles, array of subreddits
+
+  if (!twitterHandles && !subreddits) {
+    return res.status(400).json({ error: 'Missing twitterHandles or subreddits parameters in request body' });
+  }
+
+  if (!isAgentWalletDeployed()) {
+    return res.status(400).json({ error: 'Agent wallet is not initialized. Please deploy the agent wallet first.' });
+  }
+
+  console.log(`\n--- [API POST /api/analyze-social] Scanning Social Feeds ---`);
+  
+  try {
+    const handles = twitterHandles || [];
+    const subs = subreddits || [];
+    
+    // 1. Gather all social posts
+    const tweets = await fetchWhaleTweets(handles);
+    const redditPosts = await fetchRedditPosts(subs);
+    const allPosts = [...tweets, ...redditPosts];
+
+    if (allPosts.length === 0) {
+      return res.status(400).json({ error: 'No social posts retrieved from targeted sources.' });
+    }
+
+    // 2. Synthesize social feed into a single text block
+    const synthesizedText = allPosts
+      .map(p => `[${p.source}] Author: ${p.author}\nDate: ${p.timestamp}\nContent: ${p.content}\n---`)
+      .join('\n\n');
+
+    console.log(`[API-Social] Synthesized ${allPosts.length} social posts. Running sentiment scanner...`);
+
+    // 3. Query LLM (reuses the Llama parsing engine)
+    const analysis = await analyzeTranscript(synthesizedText);
+    console.log(`[API-Social] AI Sentiment Analysis:`, analysis);
+
+    // 4. Trade Execution Criteria
+    const isBullish = analysis.sentiment === 'BULLISH';
+    const isBearish = analysis.sentiment === 'BEARISH';
+    const isConfident = analysis.confidence >= 0.75;
+    
+    let tradeResult = null;
+    let tradeExecuted = false;
+    let nftResult = null;
+    let nftMinted = false;
+
+    if ((isBullish || isBearish) && isConfident) {
+      tradeExecuted = true;
+      const direction = isBullish ? 'BUY' : 'SELL';
+      
+      console.log(`[API-Social] Autonomous swap triggered: ${direction} MON`);
+      tradeResult = await executeDEXSwap(
+        'MON',
+        direction,
+        analysis.confidence
+      );
+
+      // Autonomous commemorative NFT mint
+      try {
+        nftMinted = true;
+        const mockURI = `social-scan://${handles.join('-') || 'reddit-' + subs.join('-')}`;
+        nftResult = await mintAgentNFT(mockURI);
+        console.log(`[API-Social] Commemorative NFT minted. Tx: ${nftResult.txHash}`);
+      } catch (nftError) {
+        console.warn('[API-Social] NFT minting failed:', nftError);
+      }
+    } else {
+      console.log('[API-Social] Sentiment conditions not met for executing automated trade.');
+    }
+
+    // 5. Log to ledger
+    const timestamp = new Date().toISOString();
+    const txHash = tradeResult?.success ? tradeResult.txHash : (tradeExecuted ? 'FAILED' : 'NO_TRADE');
+    
+    logToLedger({
+      timestamp,
+      youtubeUrl: `SOCIAL_SCAN_HANDLES_${handles.join('_')}`,
+      tokenTicker: 'MON',
+      sentiment: analysis.sentiment,
+      confidence: analysis.confidence,
+      actionTxHash: txHash,
+      justification: analysis.justification
+    });
+
+    res.json({
+      sources: { handles, subs },
+      postsCount: allPosts.length,
+      posts: allPosts,
+      synthesizedText,
+      analysis,
+      tradeExecuted,
+      tradeResult,
+      nftMinted,
+      nftResult,
+      timestamp
+    });
+
+  } catch (error: any) {
+    console.error('[API-Social] Error in social analysis pipeline:', error);
+    res.status(500).json({ error: error.message || 'Social pipeline processing failed' });
   }
 });
 

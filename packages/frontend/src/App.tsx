@@ -139,7 +139,18 @@ export default function App() {
   });
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<'trading' | 'nft'>('trading');
+  const [activeTab, setActiveTab] = useState<'trading' | 'nft' | 'social'>('trading');
+
+  // Social scanner states
+  const [handles, setHandles] = useState({
+    keoneHD: true,
+    monad_xyz: true,
+    cryptowhale: true
+  });
+  const [redditSub, setRedditSub] = useState('monad');
+  const [isSocialLoading, setIsSocialLoading] = useState(false);
+  const [socialLoadingStep, setSocialLoadingStep] = useState(0);
+  const [socialResult, setSocialResult] = useState<any | null>(null);
 
   // Processing States
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -575,6 +586,86 @@ export default function App() {
     }
   };
 
+  // Analyze social feeds pipeline
+  const runSocialPipeline = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSocialLoading(true);
+    setError(null);
+    setSocialResult(null);
+
+    const activeHandles = Object.entries(handles)
+      .filter(([_, active]) => active)
+      .map(([handle]) => `@${handle}`);
+
+    const activeSubs = redditSub ? [redditSub] : [];
+
+    const steps = [
+      'Establishing connection to Web3 social scrapers...',
+      'Aggregating whale tweets & Reddit selftext data...',
+      'Synthesizing combined social text stream...',
+      'Running Groq Llama narrative sentiment indexer...',
+      'Determining on-chain trading signals...',
+      'Executing automated swap on Monad Testnet...',
+      'Mints commemorative social narrative Badge NFT...',
+      'Ledger confirmation complete!'
+    ];
+
+    let currentStep = 0;
+    setSocialLoadingStep(0);
+    const stepInterval = setInterval(() => {
+      if (currentStep < steps.length - 1) {
+        currentStep++;
+        setSocialLoadingStep(currentStep);
+      }
+    }, 1500);
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/analyze-social`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          twitterHandles: activeHandles,
+          subreddits: activeSubs
+        })
+      });
+
+      clearInterval(stepInterval);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to analyze social feeds');
+      }
+
+      const data = await response.json();
+      setSocialResult(data);
+      await connectMetaMask(); // Refresh balances
+
+      // Add to local history list
+      const newItem: HistoryItem = {
+        id: Math.random().toString(),
+        url: `Social: ${activeHandles.join(', ')}`,
+        transcript: data.synthesizedText,
+        sentiment: data.analysis.sentiment,
+        confidence: data.analysis.confidence,
+        txHash: data.tradeResult ? data.tradeResult.txHash : 'NO_TRADE',
+        timestamp: new Date().toLocaleTimeString(),
+        analysis: {
+          justification: data.analysis.justification,
+          token_ticker: data.analysis.token_ticker
+        },
+        nftMinted: data.nftMinted,
+        nftTxHash: data.nftResult?.txHash
+      };
+      setLocalHistory(prev => [newItem, ...prev]);
+
+    } catch (err: any) {
+      clearInterval(stepInterval);
+      setError(err.message || 'Social pipeline execution failed');
+    } finally {
+      setIsSocialLoading(false);
+    }
+  };
+
   // Analyze video transcript pipeline
   const runPipeline = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -806,6 +897,13 @@ export default function App() {
                 ${activeTab === 'trading' ? 'bg-monad-purple text-cream' : 'bg-cream text-charcoal'}`}
             >
               Sentiment Trading Hub
+            </button>
+            <button
+              onClick={() => setActiveTab('social')}
+              className={`font-black text-xs uppercase px-5 py-3 border-2 border-charcoal shadow-neo-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all
+                ${activeTab === 'social' ? 'bg-[#FFC700] text-charcoal' : 'bg-cream text-charcoal'}`}
+            >
+              💬 Social Whale Scanner
             </button>
             <button
               onClick={() => setActiveTab('nft')}
@@ -1336,6 +1434,284 @@ export default function App() {
 
               </div>
 
+            </div>
+          ) : activeTab === 'social' ? (
+            /* SOCIAL SCANNER TAB VIEW */
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              {/* LEFT COLUMN: SCANNER PARAMETERS */}
+              <div className="lg:col-span-7 flex flex-col gap-8">
+                
+                <section className="border-3 border-charcoal bg-cream p-8 shadow-neo">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="h-8 w-8 bg-[#1A1A1A] flex items-center justify-center text-cream">
+                      <Tv size={16} />
+                    </div>
+                    <h2 className="text-xl font-black uppercase tracking-tight">Social Whale Scanner</h2>
+                  </div>
+                  
+                  <form onSubmit={runSocialPipeline} className="flex flex-col gap-6">
+                    <div>
+                      <label className="block text-xs font-bold uppercase mb-3 tracking-wider text-[#333]">
+                        Targeted Crypto Whale X (Twitter) Accounts
+                      </label>
+                      <div className="flex flex-wrap gap-4">
+                        {['keoneHD', 'monad_xyz', 'cryptowhale'].map((h) => (
+                          <label key={h} className="flex items-center gap-2 font-mono text-xs cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={(handles as any)[h]}
+                              onChange={(e) => setHandles(prev => ({ ...prev, [h]: e.target.checked }))}
+                              className="accent-monad-purple h-4 w-4 border-2 border-charcoal outline-none"
+                            />
+                            @{h}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold uppercase mb-2 tracking-wider text-[#333]">
+                        Targeted Subreddit Feed
+                      </label>
+                      <div className="flex gap-2">
+                        <span className="bg-[#FAF8F5] border-2 border-r-0 border-charcoal px-3 py-2.5 font-mono text-xs flex items-center justify-center text-[#666]">r/</span>
+                        <input
+                          type="text"
+                          placeholder="monad"
+                          value={redditSub}
+                          onChange={(e) => setRedditSub(e.target.value)}
+                          className="flex-1 bg-[#FAF8F5] text-charcoal border-2 border-charcoal px-4 py-2.5 font-mono text-xs shadow-inner outline-none focus:bg-white focus:ring-1 focus:ring-charcoal transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isSocialLoading || !agentWallet.isDeployed}
+                      className={`w-full font-black text-sm tracking-widest uppercase border-2 border-charcoal py-4 transition-all flex items-center justify-center gap-2
+                        ${isSocialLoading || !agentWallet.isDeployed
+                          ? 'bg-amber-100 cursor-not-allowed opacity-60' 
+                          : 'bg-[#FFC700] text-charcoal hover:-translate-x-1 hover:-translate-y-1 hover:shadow-neo active:translate-x-0 active:translate-y-0 active:shadow-none'
+                        }`}
+                    >
+                      {isSocialLoading ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" />
+                          SCANNING FEEDS...
+                        </>
+                      ) : (
+                        <>
+                          SCAN FEEDS & EXECUTE NARRATIVE SWAP
+                          <ArrowRight size={16} />
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </section>
+
+                {/* LOADER TIMELINE */}
+                {isSocialLoading && (
+                  <section className="border-2 border-charcoal bg-cream p-6 shadow-neo font-mono text-xs">
+                    <div className="flex items-center justify-between mb-4 border-b border-charcoal pb-2">
+                      <span className="font-bold uppercase tracking-wider flex items-center gap-2">
+                        <Terminal size={14} className="animate-pulse text-monad-purple" />
+                        Agent Social Scan Logs
+                      </span>
+                      <span className="text-[10px] text-cream bg-charcoal px-1.5 py-0.5">ACTIVE</span>
+                    </div>
+                    <div className="flex flex-col gap-3">
+                      {[
+                        'Establishing connection to Web3 social scrapers...',
+                        'Aggregating whale tweets & Reddit selftext data...',
+                        'Synthesizing combined social text stream...',
+                        'Running Groq Llama narrative sentiment indexer...',
+                        'Determining on-chain trading signals...',
+                        'Executing automated swap on Monad Testnet...',
+                        'Mints commemorative social narrative Badge NFT...',
+                        'Ledger confirmation complete!'
+                      ].map((stepText, idx) => {
+                        const isDone = socialLoadingStep > idx;
+                        const isActive = socialLoadingStep === idx;
+                        
+                        return (
+                          <div key={idx} className={`flex items-center gap-3 transition-opacity duration-300 ${isDone ? 'text-emerald-700 opacity-100' : isActive ? 'text-charcoal font-bold opacity-100' : 'text-gray-400 opacity-60'}`}>
+                            <div className={`h-4 w-4 rounded-full border border-charcoal flex items-center justify-center text-[8px] font-black
+                              ${isDone ? 'bg-emerald-500 text-cream' : isActive ? 'bg-amber-400 text-charcoal animate-bounce' : 'bg-transparent'}`}>
+                              {isDone ? '✓' : idx + 1}
+                            </div>
+                            <span>{stepText}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+
+                {/* OUTPUT RESULTS */}
+                {socialResult && (
+                  <section className="border-3 border-charcoal bg-cream p-8 shadow-neo flex flex-col gap-6">
+                    <div className="border-b border-charcoal pb-4 flex justify-between items-start">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold tracking-widest text-[#777]">Social Pipeline Outcome</span>
+                        <h3 className="text-xl font-black uppercase">Sentiment Metrics</h3>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-[#555]">{new Date(socialResult.timestamp).toLocaleTimeString()}</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="border-2 border-charcoal p-5 bg-cream flex flex-col justify-between shadow-neo-sm">
+                        <div className="text-xs font-bold uppercase tracking-wider text-[#666] mb-2">Social Sentiment</div>
+                        <div className="flex items-center gap-3">
+                          {socialResult.analysis.sentiment === 'BULLISH' ? (
+                            <div className="h-10 w-10 rounded-full bg-emerald-500 border-2 border-charcoal flex items-center justify-center text-cream">
+                              <TrendingUp size={20} />
+                            </div>
+                          ) : socialResult.analysis.sentiment === 'BEARISH' ? (
+                            <div className="h-10 w-10 rounded-full bg-red-500 border-2 border-charcoal flex items-center justify-center text-cream">
+                              <TrendingDown size={20} />
+                            </div>
+                          ) : (
+                            <div className="h-10 w-10 rounded-full bg-gray-200 border-2 border-charcoal flex items-center justify-center text-charcoal">
+                              <Layers size={20} />
+                            </div>
+                          )}
+                          <div>
+                            <div className={`text-2xl font-black tracking-tighter ${socialResult.analysis.sentiment === 'BULLISH' ? 'text-emerald-600' : socialResult.analysis.sentiment === 'BEARISH' ? 'text-red-600' : 'text-charcoal'}`}>
+                              {socialResult.analysis.sentiment}
+                            </div>
+                            <div className="text-[10px] font-mono text-[#555]">Confidence: {(socialResult.analysis.confidence * 100).toFixed(2)}%</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="border-2 border-charcoal p-5 bg-cream flex flex-col justify-between shadow-neo-sm">
+                        <div className="text-xs font-bold uppercase tracking-wider text-[#666] mb-2">Decided Action</div>
+                        <div>
+                          <div className={`text-3xl font-black uppercase ${socialResult.analysis.sentiment === 'BULLISH' ? 'text-emerald-600' : socialResult.analysis.sentiment === 'BEARISH' ? 'text-red-600' : 'text-charcoal'}`}>
+                            {socialResult.analysis.sentiment === 'BULLISH' ? 'BUY MONAD' : socialResult.analysis.sentiment === 'BEARISH' ? 'SELL MONAD' : 'DO NOTHING'}
+                          </div>
+                          <span className="text-[9px] font-bold text-[#555] block mt-1">
+                            {socialResult.analysis.sentiment === 'BULLISH' ? 'Swapping USDC to MON' : socialResult.analysis.sentiment === 'BEARISH' ? 'Swapping MON to USDC' : 'Resting on-chain'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-2 border-charcoal p-5 bg-[#FAF8F5]">
+                      <div className="text-xs font-bold uppercase tracking-wider text-[#666] mb-2">Quant Rationale</div>
+                      <p className="text-sm font-medium leading-relaxed italic text-charcoal">
+                        {socialResult.analysis.justification}
+                      </p>
+                    </div>
+
+                    {/* TX RESULT */}
+                    <div className="border-2 border-charcoal p-6 bg-cream shadow-neo-sm">
+                      <div className="flex justify-between items-center mb-4">
+                        <div className="text-xs font-bold uppercase tracking-wider text-[#666]">On-Chain Swap Status</div>
+                        {socialResult.tradeExecuted ? (
+                          <span className="px-2 py-0.5 bg-emerald-500 text-cream text-[10px] font-bold border border-charcoal uppercase">Executed</span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-amber-500 text-charcoal text-[10px] font-bold border border-charcoal uppercase">Skipped</span>
+                        )}
+                      </div>
+
+                      {socialResult.tradeExecuted && socialResult.tradeResult ? (
+                        <div className="flex flex-col gap-3">
+                          <div className="grid grid-cols-2 gap-4 text-xs font-mono bg-[#FAF8F5] p-3 border border-dashed border-charcoal">
+                            <div>
+                              <span className="block text-[#666]">Swapped In</span>
+                              <span className="font-bold text-red-600">{socialResult.tradeResult.amountIn}</span>
+                            </div>
+                            <div>
+                              <span className="block text-[#666]">Received Out</span>
+                              <span className="font-bold text-emerald-600">{socialResult.tradeResult.amountOut}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-1 text-[11px] font-mono mt-1">
+                            <div className="flex justify-between">
+                              <span className="text-[#666]">Signature Type</span>
+                              <span className="font-bold">Proxy Burner Wallet (Delegated)</span>
+                            </div>
+                            <div className="flex justify-between items-center gap-6 mt-1">
+                              <span className="text-[#666]">Swap Tx Hash</span>
+                              <span className="font-bold truncate max-w-[200px]">{socialResult.tradeResult.txHash}</span>
+                            </div>
+                          </div>
+
+                          {socialResult.nftMinted && socialResult.nftResult && (
+                            <div className="mt-3 pt-3 border-t border-charcoal/20 flex flex-col gap-1 text-[11px] font-mono">
+                              <div className="flex justify-between text-monad-orange font-bold">
+                                <span>Autonomous NFT Mint</span>
+                                <span>SUCCESS (1 MHB)</span>
+                              </div>
+                              <div className="flex justify-between items-center gap-6">
+                                <span className="text-[#666]">Mint Tx Hash</span>
+                                <span className="font-bold truncate max-w-[200px] text-monad-orange">{socialResult.nftResult.txHash}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="mt-2 pt-3 border-t border-charcoal flex justify-between items-center">
+                            <span className="text-[10px] text-[#666] font-bold">MONAD BLOCK EXPLORER</span>
+                            <a 
+                              href={`https://testnet.monadexplorer.com/tx/${socialResult.tradeResult.txHash}`} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="text-xs font-bold text-monad-purple hover:underline flex items-center gap-1"
+                            >
+                              Verify TX <ExternalLink size={12} />
+                            </a>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-[#666] leading-relaxed">
+                          No trade transaction was issued because the sentiment confidence score ({(socialResult.analysis.confidence * 100).toFixed(2)}%) did not cross the delegated swap execution threshold limit (75%).
+                        </p>
+                      )}
+                    </div>
+                  </section>
+                )}
+              </div>
+
+              {/* RIGHT COLUMN: SCANNED POSTS FEED */}
+              <div className="lg:col-span-5 border-3 border-charcoal bg-cream p-6 shadow-neo">
+                <div className="flex justify-between items-center mb-6 border-b border-charcoal pb-3">
+                  <h3 className="text-base font-black uppercase tracking-tight">Aggregated Social Feed</h3>
+                  {socialResult && (
+                    <span className="px-2 py-0.5 bg-[#1A1A1A] text-cream text-[9px] font-bold font-mono">
+                      {socialResult.postsCount} POSTS PARSED
+                    </span>
+                  )}
+                </div>
+
+                {!socialResult ? (
+                  <div className="border-2 border-dashed border-charcoal p-12 text-center text-xs text-[#666] bg-[#FAF8F5]">
+                    Trigger a scan to aggregate and preview the crypto whale feeds.
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4 max-h-[600px] overflow-y-auto pr-2">
+                    {socialResult.posts.map((post: any, idx: number) => (
+                      <div key={idx} className="border-2 border-charcoal p-4 bg-cream shadow-neo-sm text-xs flex flex-col gap-2">
+                        <div className="flex justify-between items-center">
+                          <span className="font-mono text-[9px] text-[#666]">{new Date(post.timestamp).toLocaleTimeString()}</span>
+                          <span className={`px-1.5 py-0.5 text-[8px] font-bold border border-charcoal uppercase
+                            ${post.source === 'TWITTER' ? 'bg-[#1DA1F2]/10 text-[#1DA1F2]' : 'bg-[#FF4500]/10 text-[#FF4500]'}`}>
+                            {post.source}
+                          </span>
+                        </div>
+                        <div className="font-bold text-charcoal">{post.author}</div>
+                        <p className="text-[11px] text-[#444] leading-relaxed whitespace-pre-wrap bg-[#FAF8F5] p-2 border border-charcoal/10">
+                          {post.content}
+                        </p>
+                        <a href={post.url} target="_blank" rel="noreferrer" className="text-[9px] font-bold text-monad-purple hover:underline self-end">
+                          View Original Post →
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             /* NFT MINTING HUB TAB VIEW */
