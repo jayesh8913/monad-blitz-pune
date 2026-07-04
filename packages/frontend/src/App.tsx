@@ -313,6 +313,37 @@ export default function App() {
     });
   };
 
+  // Offer user to import USDC token asset in MetaMask
+  const importUsdcToken = async () => {
+    if (!window.ethereum) return;
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const usdcContract = new ethers.Contract(contractAddresses.token, [
+        "function decimals() external view returns (uint8)"
+      ], provider);
+      let decimals = 6;
+      try {
+        const dec = await usdcContract.decimals();
+        decimals = Number(dec);
+      } catch (e) {}
+
+      await window.ethereum.request({
+        method: 'wallet_watchAsset',
+        params: {
+          type: 'ERC20',
+          options: {
+            address: contractAddresses.token,
+            symbol: 'USDC',
+            decimals: decimals,
+            image: 'https://cryptologos.cc/logos/usd-coin-usdc-logo.png',
+          },
+        },
+      });
+    } catch (error) {
+      console.error('Failed to import USDC token:', error);
+    }
+  };
+
   // Switch to Monad Network
   const switchNetwork = async () => {
     if (!window.ethereum) return;
@@ -366,6 +397,16 @@ export default function App() {
       setError('Please connect your MetaMask wallet first.');
       return;
     }
+
+    // Check if it's the official Circle USDC contract (does not support mintFaucet method)
+    const isCircleUsdc = contractAddresses.token.toLowerCase() === '0x534b2f3a21130d7a60830c2df862319e593943a3';
+    if (isCircleUsdc) {
+      console.log('[Faucet] Redirecting user to official Circle Faucet...');
+      window.open('https://faucet.circle.com/', '_blank');
+      alert('Official USDC does not support direct smart contract faucet minting. Redirecting you to the Circle Faucet to claim Monad Testnet USDC. Please import the token in MetaMask to see your balance!');
+      return;
+    }
+
     setIsClaimingFaucet(true);
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -393,7 +434,8 @@ export default function App() {
       await connectMetaMask();
     } catch (err: any) {
       console.error(err);
-      setError('Faucet minting is not supported on this token contract address. (If this is real USDC, please claim tokens from an external faucet).');
+      window.open('https://faucet.circle.com/', '_blank');
+      setError('Faucet minting is not supported on this token contract address. Redirected you to Circle Faucet instead.');
     } finally {
       setIsClaimingFaucet(false);
     }
@@ -665,6 +707,12 @@ export default function App() {
                 <span className="font-bold">{userWallet.balance} MON</span>
                 <span className="font-bold text-monad-purple">{userWallet.userUsdcBalance} USDC</span>
               </div>
+              <button 
+                onClick={importUsdcToken}
+                className="mt-1 text-left text-[10px] underline text-monad-purple font-bold hover:text-purple-800"
+              >
+                Import USDC to MetaMask
+              </button>
               {userWallet.chainId !== MONAD_CHAIN_ID && (
                 <button
                   onClick={switchNetwork}
