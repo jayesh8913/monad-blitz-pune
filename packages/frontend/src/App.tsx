@@ -28,7 +28,7 @@ import {
 const BACKEND_URL = 'http://localhost:3001';
 const MONAD_CHAIN_ID = '0x279f'; // 10143 in decimal
 const MOCK_DEX_ADDRESS = '0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199';
-const MOCK_ETH_ADDRESS = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+const MOCK_USDC_ADDRESS = '0x754704Bc059F8C67012fEd69BC8A327a5aafb603';
 const MOCK_NFT_ADDRESS = '0x9F1F64848dcf456f9661411D4ceD1C1c1C11199';
 
 const MONAD_NETWORK_PARAMS = {
@@ -46,7 +46,7 @@ const MONAD_NETWORK_PARAMS = {
 interface WalletState {
   address: string | null;
   balance: string | null;
-  userEthBalance: string | null;
+  userUsdcBalance: string | null;
   chainId: string | null;
   isConnected: boolean;
 }
@@ -55,7 +55,7 @@ interface AgentState {
   isDeployed: boolean;
   address: string | null;
   balance: string;
-  ethBalance: string;
+  usdcBalance: string;
 }
 
 interface AnalysisResult {
@@ -118,7 +118,7 @@ export default function App() {
   const [userWallet, setUserWallet] = useState<WalletState>({
     address: null,
     balance: null,
-    userEthBalance: '0.0000',
+    userUsdcBalance: '0.0000',
     chainId: null,
     isConnected: false,
   });
@@ -128,12 +128,12 @@ export default function App() {
     isDeployed: false,
     address: null,
     balance: '0.0000',
-    ethBalance: '0.0000',
+    usdcBalance: '0.0000',
   });
 
   // Dynamic contract addresses resolved from backend configs
   const [contractAddresses, setContractAddresses] = useState({
-    token: MOCK_ETH_ADDRESS,
+    token: MOCK_USDC_ADDRESS,
     dex: MOCK_DEX_ADDRESS,
     nft: MOCK_NFT_ADDRESS
   });
@@ -149,15 +149,14 @@ export default function App() {
 
   // Financial inputs
   const [depositAmount, setDepositAmount] = useState('');
-  const [depositToken, setDepositToken] = useState<'MON' | 'ETH'>('MON');
+  const [depositToken, setDepositToken] = useState<'MON' | 'USDC'>('MON');
   
   const [withdrawAmount, setWithdrawAmount] = useState('');
-  const [withdrawToken, setWithdrawToken] = useState<'MON' | 'ETH'>('MON');
+  const [withdrawToken, setWithdrawToken] = useState<'MON' | 'USDC'>('MON');
   
   const [isDepositing, setIsDepositing] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [isDeployingAgent, setIsDeployingAgent] = useState(false);
-  const [isManualTrading, setIsManualTrading] = useState(false);
   const [isClaimingFaucet, setIsClaimingFaucet] = useState(false);
 
   // NFT State Variables
@@ -180,7 +179,7 @@ export default function App() {
           isDeployed: data.isDeployed,
           address: data.address,
           balance: data.isDeployed ? parseFloat(data.balance).toFixed(4) : '0.0000',
-          ethBalance: data.isDeployed ? parseFloat(data.ethBalance).toFixed(4) : '0.0000',
+          usdcBalance: data.isDeployed ? parseFloat(data.usdcBalance).toFixed(4) : '0.0000',
         });
         
         if (data.tokenAddress && data.dexAddress && data.nftAddress) {
@@ -262,16 +261,24 @@ export default function App() {
         console.warn('Failed to fetch configurations on connection:', e);
       }
 
-      // Fetch user's ERC20 ETH token balance
-      let userEthBalance = '0.0000';
+      // Fetch user's ERC20 USDC token balance
+      let userUsdcBalance = '0.0000';
       try {
-        const ethContract = new ethers.Contract(tokenAddr, [
-          "function balanceOf(address account) external view returns (uint256)"
+        const usdcContract = new ethers.Contract(tokenAddr, [
+          "function balanceOf(address account) external view returns (uint256)",
+          "function decimals() external view returns (uint8)"
         ], provider);
-        const userEthBalanceWei = await ethContract.balanceOf(address);
-        userEthBalance = parseFloat(ethers.formatEther(userEthBalanceWei)).toFixed(4);
+        let decimals = 18;
+        try {
+          const dec = await usdcContract.decimals();
+          decimals = Number(dec);
+        } catch (e) {
+          decimals = 6;
+        }
+        const userUsdcBalanceWei = await usdcContract.balanceOf(address);
+        userUsdcBalance = parseFloat(ethers.formatUnits(userUsdcBalanceWei, decimals)).toFixed(4);
       } catch (e) {
-        console.warn(`Could not fetch user ETH balance at contract address ${tokenAddr}:`, e);
+        console.warn(`Could not fetch user USDC balance at contract address ${tokenAddr}:`, e);
       }
 
       const network = await provider.getNetwork();
@@ -280,7 +287,7 @@ export default function App() {
       setUserWallet({
         address,
         balance: parseFloat(balance).toFixed(4),
-        userEthBalance,
+        userUsdcBalance,
         chainId: chainIdHex,
         isConnected: true,
       });
@@ -300,7 +307,7 @@ export default function App() {
     setUserWallet({
       address: null,
       balance: null,
-      userEthBalance: '0.0000',
+      userUsdcBalance: '0.0000',
       chainId: null,
       isConnected: false,
     });
@@ -352,8 +359,8 @@ export default function App() {
     }
   };
 
-  // Claim Faucet ETH tokens to MetaMask wallet
-  const handleClaimFaucetETH = async () => {
+  // Claim Faucet USDC tokens to MetaMask wallet
+  const handleClaimFaucetUSDC = async () => {
     setError(null);
     if (!userWallet.address) {
       setError('Please connect your MetaMask wallet first.');
@@ -364,20 +371,29 @@ export default function App() {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       
-      const ethContract = new ethers.Contract(contractAddresses.token, [
-        "function mintFaucet(uint256 amount) external"
+      const usdcContract = new ethers.Contract(contractAddresses.token, [
+        "function mintFaucet(uint256 amount) external",
+        "function decimals() external view returns (uint8)"
       ], signer);
 
-      console.log('[Faucet] Minting 10.0 Mock ETH to MetaMask...');
-      const tx = await ethContract.mintFaucet(ethers.parseEther("10.0"));
+      let decimals = 18;
+      try {
+        const dec = await usdcContract.decimals();
+        decimals = Number(dec);
+      } catch (e) {
+        decimals = 6;
+      }
+
+      console.log('[Faucet] Minting 10.0 Mock USDC to MetaMask...');
+      const tx = await usdcContract.mintFaucet(ethers.parseUnits("10.0", decimals));
       await tx.wait();
       console.log('[Faucet] Faucet transaction confirmed!');
       
-      alert('Faucet claim successful! Claimed 10.0 Mock ETH.');
+      alert('Faucet claim successful! Claimed 10.0 USDC.');
       await connectMetaMask();
     } catch (err: any) {
       console.error(err);
-      setError('Faucet minting is not supported on this token contract address. (If this is WETH/real ERC20, please claim tokens from an external faucet).');
+      setError('Faucet minting is not supported on this token contract address. (If this is real USDC, please claim tokens from an external faucet).');
     } finally {
       setIsClaimingFaucet(false);
     }
@@ -403,12 +419,21 @@ export default function App() {
         });
         await tx.wait();
       } else {
-        console.log(`[Web3] Transferring ${depositAmount} Mock ETH to Agent address ${agentWallet.address}`);
-        const ethContract = new ethers.Contract(contractAddresses.token, [
-          "function transfer(address to, uint256 value) external returns (bool)"
+        console.log(`[Web3] Transferring ${depositAmount} USDC to Agent address ${agentWallet.address}`);
+        const usdcContract = new ethers.Contract(contractAddresses.token, [
+          "function transfer(address to, uint256 value) external returns (bool)",
+          "function decimals() external view returns (uint8)"
         ], signer);
         
-        const tx = await ethContract.transfer(agentWallet.address, ethers.parseEther(depositAmount));
+        let decimals = 18;
+        try {
+          const dec = await usdcContract.decimals();
+          decimals = Number(dec);
+        } catch (e) {
+          decimals = 6;
+        }
+
+        const tx = await usdcContract.transfer(agentWallet.address, ethers.parseUnits(depositAmount, decimals));
         await tx.wait();
       }
 
@@ -457,30 +482,7 @@ export default function App() {
     }
   };
 
-  // Manual swap execution
-  const handleManualTrade = async (action: 'BUY' | 'SELL') => {
-    setIsManualTrading(true);
-    setError(null);
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/trade`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          amount: '0.01',
-        }),
-      });
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Manual trade transaction failed');
-      }
-      await connectMetaMask();
-    } catch (err: any) {
-      setError(err.message || 'Manual trade failed');
-    } finally {
-      setIsManualTrading(false);
-    }
-  };
+  // Manual trade execution has been taken down as per user request.
 
   // Handle Client-Side User NFT Minting
   const handleUserMintNFT = async () => {
@@ -661,7 +663,7 @@ export default function App() {
               <div className="text-sm font-bold truncate">{userWallet.address}</div>
               <div className="flex justify-between mt-1 text-[11px]">
                 <span className="font-bold">{userWallet.balance} MON</span>
-                <span className="font-bold text-monad-purple">{userWallet.userEthBalance} ETH</span>
+                <span className="font-bold text-monad-purple">{userWallet.userUsdcBalance} USDC</span>
               </div>
               {userWallet.chainId !== MONAD_CHAIN_ID && (
                 <button
@@ -727,11 +729,11 @@ export default function App() {
                 Monad Hackathon Faucet Token Drop
               </h3>
               <p className="text-xs text-[#555] mt-1 font-medium">
-                Claim mock ETH faucet tokens directly to your MetaMask wallet. Deposit them to the AI agent burner to enable narrative swaps.
+                Claim mock USDC faucet tokens directly to your MetaMask wallet. Deposit them to the AI agent burner to enable narrative swaps.
               </p>
             </div>
             <button
-              onClick={handleClaimFaucetETH}
+              onClick={handleClaimFaucetUSDC}
               disabled={isClaimingFaucet}
               className="bg-charcoal text-cream font-black text-xs tracking-wider px-6 py-3 border-2 border-charcoal shadow-neo hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0px_0px_#1A1A1A] active:translate-x-0 active:translate-y-0 active:shadow-none transition-all uppercase flex items-center gap-2 shrink-0"
             >
@@ -742,7 +744,7 @@ export default function App() {
                 </>
               ) : (
                 <>
-                  CLAIM 10.0 MOCK ETH FAUCET
+                  CLAIM 10.0 USDC FAUCET
                 </>
               )}
             </button>
@@ -824,9 +826,9 @@ export default function App() {
                           </div>
                         </div>
                         <div className="border-2 border-charcoal p-4 bg-[#FAF8F5]">
-                          <span className="text-[10px] uppercase font-bold text-[#666]">Agent ETH Balance</span>
+                          <span className="text-[10px] uppercase font-bold text-[#666]">Agent USDC Balance</span>
                           <div className="font-mono text-base font-bold mt-0.5 text-monad-purple">
-                            {agentWallet.ethBalance} <span className="text-xs text-[#555]">ETH</span>
+                            {agentWallet.usdcBalance} <span className="text-xs text-[#555]">USDC</span>
                           </div>
                         </div>
                       </div>
@@ -851,15 +853,15 @@ export default function App() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setDepositToken('ETH')}
-                                className={`px-1.5 py-0.5 border ${depositToken === 'ETH' ? 'bg-charcoal text-cream' : 'border-charcoal/20'}`}
+                                onClick={() => setDepositToken('USDC')}
+                                className={`px-1.5 py-0.5 border ${depositToken === 'USDC' ? 'bg-charcoal text-cream' : 'border-charcoal/20'}`}
                               >
-                                ETH
+                                USDC
                               </button>
                             </div>
                           </h4>
                           <p className="text-[10px] text-[#666] leading-relaxed">
-                            Transfer native MON gas or ETH tokens to the agent's proxy address.
+                            Transfer native MON gas or USDC tokens to the agent's proxy address.
                           </p>
                           <div className="flex gap-2">
                             <input
@@ -898,15 +900,15 @@ export default function App() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setWithdrawToken('ETH')}
-                                className={`px-1.5 py-0.5 border ${withdrawToken === 'ETH' ? 'bg-charcoal text-cream' : 'border-charcoal/20'}`}
+                                onClick={() => setWithdrawToken('USDC')}
+                                className={`px-1.5 py-0.5 border ${withdrawToken === 'USDC' ? 'bg-charcoal text-cream' : 'border-charcoal/20'}`}
                               >
-                                ETH
+                                USDC
                               </button>
                             </div>
                           </h4>
                           <p className="text-[10px] text-[#666] leading-relaxed">
-                            Retrieve gas or assets back from the burner proxy to MetaMask.
+                            Retrieve gas or USDC back from the burner proxy to MetaMask.
                           </p>
                           <div className="flex gap-2">
                             <input
@@ -934,29 +936,13 @@ export default function App() {
                   )}
                 </div>
 
-                {/* RIGHT PANEL: MANUAL INTERACTION & DEX INFO */}
+                {/* RIGHT PANEL: CONTRACT INFORMATION */}
                 <div className="lg:col-span-5 border-3 border-charcoal bg-cream p-6 shadow-neo flex flex-col justify-between">
                   <div>
-                    <h3 className="text-lg font-black uppercase mb-3 tracking-tight">Manual DEX Execution</h3>
+                    <h3 className="text-lg font-black uppercase mb-3 tracking-tight">Contract Information</h3>
                     <p className="text-xs text-[#555] leading-relaxed mb-4">
-                      Bypass the AI analysis model to manually trigger native MON to Mock ETH swaps directly using the agent burner wallet proxy.
+                      Addresses for deployed smart contracts interfacing with the Autonomous AI Sentiment Agent on Monad Testnet.
                     </p>
-                    <div className="flex gap-4">
-                      <button
-                        onClick={() => handleManualTrade('BUY')}
-                        disabled={isManualTrading || !agentWallet.isDeployed}
-                        className="flex-1 bg-emerald-500 text-cream font-black text-xs py-3 border-2 border-charcoal shadow-neo-sm hover:-translate-y-0.5 hover:shadow-neo active:translate-y-0 active:shadow-none transition-all uppercase"
-                      >
-                        Manual BUY MON (Swap ETH)
-                      </button>
-                      <button
-                        onClick={() => handleManualTrade('SELL')}
-                        disabled={isManualTrading || !agentWallet.isDeployed}
-                        className="flex-1 bg-red-500 text-cream font-black text-xs py-3 border-2 border-charcoal shadow-neo-sm hover:-translate-y-0.5 hover:shadow-neo active:translate-y-0 active:shadow-none transition-all uppercase"
-                      >
-                        Manual SELL MON (Swap MON)
-                      </button>
-                    </div>
                   </div>
 
                   <div className="border-t border-charcoal/20 pt-4 mt-6 text-xs flex flex-col gap-1.5">
@@ -965,8 +951,12 @@ export default function App() {
                       <span className="font-mono text-[#333] block truncate font-bold">{contractAddresses.dex}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] uppercase font-bold text-[#666] block">ETH Token Contract Address</span>
+                      <span className="text-[10px] uppercase font-bold text-[#666] block">USDC Token Contract Address</span>
                       <span className="font-mono text-monad-purple block truncate font-bold">{contractAddresses.token}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-[#666] block">MHB NFT Contract Address</span>
+                      <span className="font-mono text-monad-purple block truncate font-bold">{contractAddresses.nft}</span>
                     </div>
                   </div>
                 </div>
@@ -1115,7 +1105,7 @@ export default function App() {
                               {result.analysis.sentiment === 'BULLISH' ? 'BUY MONAD' : result.analysis.sentiment === 'BEARISH' ? 'SELL MONAD' : 'DO NOTHING'}
                             </div>
                             <span className="text-[9px] font-bold text-[#555] block mt-1">
-                              {result.analysis.sentiment === 'BULLISH' ? 'Swapping Mock ETH to MON' : result.analysis.sentiment === 'BEARISH' ? 'Swapping MON to Mock ETH' : 'Resting on-chain'}
+                              {result.analysis.sentiment === 'BULLISH' ? 'Swapping USDC to MON' : result.analysis.sentiment === 'BEARISH' ? 'Swapping MON to USDC' : 'Resting on-chain'}
                             </span>
                           </div>
                         </div>
@@ -1288,9 +1278,9 @@ export default function App() {
 
                   {/* PERSISTENT LEDGER NOTICE */}
                   <section className="border-2 border-charcoal bg-cream p-4 text-xs">
-                    <div className="font-bold text-charcoal uppercase mb-1">Persistent Context Ledger</div>
+                    <div className="font-bold text-charcoal uppercase mb-1">Execution Loop Logger</div>
                     <p className="text-[#666] leading-relaxed">
-                      Every operation executed by this agent is appended to <code className="bg-[#1A1A1A] text-cream px-1.5 py-0.5 text-[10px] font-mono">context.md</code> in the project root directory. Use it to audit AI risk assessments and transaction proofs.
+                      Every operation executed by this agent is logged directly to the server console log for security, performance, and audit compliance on Monad Testnet.
                     </p>
                   </section>
 

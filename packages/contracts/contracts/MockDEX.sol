@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-interface IMockETH {
+interface IMockUSDC {
     function transfer(address to, uint256 value) external returns (bool);
     function transferFrom(address from, address to, uint256 value) external returns (bool);
     function balanceOf(address account) external view returns (uint256);
@@ -10,74 +10,75 @@ interface IMockETH {
 /**
  * @title MockDEX
  * @dev A mock DEX contract designed specifically for Monad Testnet hackathon testing.
- * It simulates swaps between native MON and Mock ETH.
+ * It simulates swaps between native MON and USDC.
  */
 contract MockDEX {
     
     event SwapExecuted(
         address indexed agentWallet,
-        string tokenTicker, // "ETH" or "MON"
-        bool isBuyMON, // true if swapping ETH -> MON (buying MON), false if swapping MON -> ETH (selling MON)
+        string tokenTicker, // "USDC" or "MON"
+        bool isBuyMON, // true if swapping USDC -> MON (buying MON), false if swapping MON -> USDC (selling MON)
         uint256 amountIn,
         uint256 amountOut,
         uint256 timestamp
     );
 
-    address public mockETHAddress;
+    address public mockUSDCAddress;
 
-    constructor(address _mockETHAddress) payable {
-        mockETHAddress = _mockETHAddress;
+    constructor(address _mockUSDCAddress) payable {
+        mockUSDCAddress = _mockUSDCAddress;
     }
 
     /**
-     * @dev Swaps Mock ETH for native MON. (Buying MON)
-     * @param ethAmountIn The amount of Mock ETH to swap
+     * @dev Swaps Mock USDC for native MON. (Buying MON)
+     * @param usdcAmountIn The amount of Mock USDC to swap
      */
-    function swapETHForMON(uint256 ethAmountIn) external {
-        require(ethAmountIn > 0, "DEX: Insufficient ETH amount");
+    function swapUSDCForMON(uint256 usdcAmountIn) external {
+        require(usdcAmountIn > 0, "DEX: Insufficient USDC amount");
         
-        IMockETH ethToken = IMockETH(mockETHAddress);
+        IMockUSDC usdcToken = IMockUSDC(mockUSDCAddress);
         
-        // In sandbox fallback, if allowance is not set or balance is low, we simulate it.
-        // For on-chain compatibility, we attempt transferFrom.
-        require(ethToken.transferFrom(msg.sender, address(this), ethAmountIn), "DEX: ETH transfer failed");
+        // Transfer USDC to this contract
+        require(usdcToken.transferFrom(msg.sender, address(this), usdcAmountIn), "DEX: USDC transfer failed");
         
-        // Exchange rate: 1 ETH = 10 MON
-        uint256 monAmountOut = ethAmountIn * 10;
+        // Exchange rate: 1 USDC = 10 MON (USDC has 6 decimals, MON has 18 decimals)
+        // monAmountOut = usdcAmountIn * 10 * 1e12
+        uint256 monAmountOut = usdcAmountIn * 10 * 1e12;
         
         require(address(this).balance >= monAmountOut, "DEX: Insufficient MON liquidity in DEX pool");
         payable(msg.sender).transfer(monAmountOut);
 
         emit SwapExecuted(
             msg.sender,
-            "ETH",
+            "USDC",
             true, // isBuyMON = true
-            ethAmountIn,
+            usdcAmountIn,
             monAmountOut,
             block.timestamp
         );
     }
 
     /**
-     * @dev Swaps native MON for Mock ETH. (Selling MON)
+     * @dev Swaps native MON for Mock USDC. (Selling MON)
      */
-    function swapMONForETH() external payable {
+    function swapMONForUSDC() external payable {
         require(msg.value > 0, "DEX: Insufficient MON sent");
 
-        // Exchange rate: 10 MON = 1 ETH
-        uint256 ethAmountOut = msg.value / 10;
+        // Exchange rate: 10 MON = 1 USDC (MON has 18 decimals, USDC has 6 decimals)
+        // usdcAmountOut = msg.value / 10 / 1e12
+        uint256 usdcAmountOut = msg.value / 10 / 1e12;
         
-        IMockETH ethToken = IMockETH(mockETHAddress);
-        require(ethToken.balanceOf(address(this)) >= ethAmountOut, "DEX: Insufficient ETH liquidity in DEX pool");
+        IMockUSDC usdcToken = IMockUSDC(mockUSDCAddress);
+        require(usdcToken.balanceOf(address(this)) >= usdcAmountOut, "DEX: Insufficient USDC liquidity in DEX pool");
 
-        require(ethToken.transfer(msg.sender, ethAmountOut), "DEX: ETH payout failed");
+        require(usdcToken.transfer(msg.sender, usdcAmountOut), "DEX: USDC payout failed");
 
         emit SwapExecuted(
             msg.sender,
-            "ETH",
+            "USDC",
             false, // isBuyMON = false
             msg.value,
-            ethAmountOut,
+            usdcAmountOut,
             block.timestamp
         );
     }

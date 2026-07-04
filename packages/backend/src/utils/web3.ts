@@ -6,14 +6,14 @@ dotenv.config();
 
 const MONAD_TESTNET_RPC = process.env.MONAD_TESTNET_RPC || 'https://testnet-rpc.monad.xyz';
 const MOCK_DEX_ADDRESS = process.env.MOCK_DEX_ADDRESS || '0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199';
-const MOCK_ETH_ADDRESS = process.env.MOCK_ETH_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+const MOCK_USDC_ADDRESS = process.env.MOCK_USDC_ADDRESS || '0x754704Bc059F8C67012fEd69BC8A327a5aafb603';
 const MOCK_NFT_ADDRESS = process.env.MOCK_NFT_ADDRESS || '0x9F1F64848dcf456f9661411D4ceD1C1c1C11199';
 const WALLET_FILE_PATH = path.resolve(__dirname, '../../agent_wallet.json');
 
 // Abi definitions
 const MOCK_DEX_ABI = [
-  "function swapETHForMON(uint256 ethAmountIn) external",
-  "function swapMONForETH() external payable",
+  "function swapUSDCForMON(uint256 usdcAmountIn) external",
+  "function swapMONForUSDC() external payable",
   "event SwapExecuted(address indexed agentWallet, string tokenTicker, bool isBuyMON, uint256 amountIn, uint256 amountOut, uint256 timestamp)"
 ];
 
@@ -21,7 +21,8 @@ const ERC20_ABI = [
   "function balanceOf(address account) external view returns (uint256)",
   "function approve(address spender, uint256 value) external returns (bool)",
   "function transfer(address to, uint256 value) external returns (bool)",
-  "function mintFaucet(uint256 amount) external"
+  "function mintFaucet(uint256 amount) external",
+  "function decimals() external view returns (uint8)"
 ];
 
 // Setup RPC Provider
@@ -104,13 +105,20 @@ export async function getAgentBalance(): Promise<string> {
   }
 }
 
-export async function getAgentETHBalance(): Promise<string> {
+export async function getAgentUSDCBalance(): Promise<string> {
   if (!agentWallet) return '0.0 (uninitialized)';
   if (!provider) return '0.0 (offline)';
   try {
-    const ethContract = new ethers.Contract(MOCK_ETH_ADDRESS, ERC20_ABI, provider);
-    const balance = await ethContract.balanceOf(agentWallet.address);
-    return ethers.formatEther(balance);
+    const usdcContract = new ethers.Contract(MOCK_USDC_ADDRESS, ERC20_ABI, provider);
+    let decimals = 18;
+    try {
+      decimals = await usdcContract.decimals();
+    } catch (e) {
+      console.warn('[Web3] Failed to fetch USDC decimals, defaulting to 6:', e);
+      decimals = 6;
+    }
+    const balance = await usdcContract.balanceOf(agentWallet.address);
+    return ethers.formatUnits(balance, decimals);
   } catch (err) {
     return '0.0 (error)';
   }
@@ -127,9 +135,9 @@ export interface TradeResult {
 }
 
 /**
- * @dev Swaps native MON and MockETH. 
- * BUY MON = Swaps MockETH -> MON (occurs when sentiment is BULLISH)
- * SELL MON = Swaps MON -> MockETH (occurs when sentiment is BEARISH)
+ * @dev Swaps native MON and USDC. 
+ * BUY MON = Swaps USDC -> MON (occurs when sentiment is BULLISH)
+ * SELL MON = Swaps MON -> USDC (occurs when sentiment is BEARISH)
  */
 export async function executeDEXSwap(
   ticker: string,
@@ -143,7 +151,7 @@ export async function executeDEXSwap(
   console.log(`[Web3] Automated Trade: MONAD | Action: ${direction} MON | Confidence: ${confidence}`);
   
   const monAmountToSwapStr = (0.01 * confidence).toFixed(4); // MON scale
-  const ethAmountToSwapStr = (parseFloat(monAmountToSwapStr) / 10).toFixed(5); // 10 MON = 1 ETH rate
+  const usdcAmountToSwapStr = (parseFloat(monAmountToSwapStr) / 10).toFixed(6); // 10 MON = 1 USDC rate
   
   try {
     if (!provider) {
@@ -151,9 +159,17 @@ export async function executeDEXSwap(
     }
 
     const dexContract = new ethers.Contract(MOCK_DEX_ADDRESS, MOCK_DEX_ABI, agentWallet);
-    const ethContract = new ethers.Contract(MOCK_ETH_ADDRESS, ERC20_ABI, agentWallet);
+    const usdcContract = new ethers.Contract(MOCK_USDC_ADDRESS, ERC20_ABI, agentWallet);
 
-    if (direction === 'SELL') { // Selling MON (swapping MON -> ETH)
+    let decimals = 18;
+    try {
+      decimals = await usdcContract.decimals();
+    } catch (e) {
+      console.warn('[Web3] Failed to fetch USDC decimals, defaulting to 6:', e);
+      decimals = 6;
+    }
+
+    if (direction === 'SELL') { // Selling MON (swapping MON -> USDC)
       const balance = await provider.getBalance(agentWallet.address);
       const amountToSwap = ethers.parseEther(monAmountToSwapStr);
       
@@ -161,8 +177,8 @@ export async function executeDEXSwap(
         throw new Error(`Insufficient native MON balance: Agent has ${ethers.formatEther(balance)} MON. Needs ${monAmountToSwapStr} MON.`);
       }
 
-      console.log(`[Web3] Sending Tx: swapMONForETH sending ${monAmountToSwapStr} MON...`);
-      const tx = await dexContract.swapMONForETH({
+      console.log(`[Web3] Sending Tx: swapMONForUSDC sending ${monAmountToSwapStr} MON...`);
+      const tx = await dexContract.swapMONForUSDC({
         value: amountToSwap,
         gasLimit: 150000
       });
@@ -173,30 +189,34 @@ export async function executeDEXSwap(
         success: true,
         txHash: receipt!.hash,
         amountIn: `${monAmountToSwapStr} MON`,
-        amountOut: `${ethAmountToSwapStr} ETH`,
+        amountOut: `${usdcAmountToSwapStr} USDC`,
         simulated: false,
         agentAddress: agentWallet.address
       };
-    } else { // Buying MON (swapping ETH -> MON)
-      const ethAmountToSwap = ethers.parseEther(ethAmountToSwapStr);
+    } else { // Buying MON (swapping USDC -> MON)
+      const usdcAmountToSwap = ethers.parseUnits(usdcAmountToSwapStr, decimals);
       
-      // Check ETH balance
-      const ethBalance = await ethContract.balanceOf(agentWallet.address);
-      if (ethBalance < ethAmountToSwap) {
-        console.log(`[Web3] Agent has insufficient MockETH (${ethers.formatEther(ethBalance)} ETH). Claiming faucet tokens autonomously...`);
-        // Claim faucet tokens for the agent autonomously
-        const mintTx = await ethContract.mintFaucet(ethers.parseEther("1.0")); // claim 1 ETH
-        await mintTx.wait();
-        console.log(`[Web3] Faucet mint success. Agent funded with 1.0 MockETH.`);
+      // Check USDC balance
+      const usdcBalance = await usdcContract.balanceOf(agentWallet.address);
+      if (usdcBalance < usdcAmountToSwap) {
+        console.log(`[Web3] Agent has insufficient USDC (${ethers.formatUnits(usdcBalance, decimals)} USDC). Claiming faucet tokens autonomously...`);
+        try {
+          // Claim faucet tokens for the agent autonomously
+          const mintTx = await usdcContract.mintFaucet(ethers.parseUnits("10.0", decimals)); // claim 10 USDC
+          await mintTx.wait();
+          console.log(`[Web3] Faucet mint success. Agent funded with 10.0 USDC.`);
+        } catch (mintErr) {
+          console.warn(`[Web3] Autonomous faucet claim failed (USDC contract may not support mintFaucet):`, mintErr);
+        }
       }
 
-      // Approve DEX contract to spend ETH
-      console.log(`[Web3] Approving MockDEX to spend ${ethAmountToSwapStr} ETH...`);
-      const approveTx = await ethContract.approve(MOCK_DEX_ADDRESS, ethAmountToSwap);
+      // Approve DEX contract to spend USDC
+      console.log(`[Web3] Approving MockDEX to spend ${usdcAmountToSwapStr} USDC...`);
+      const approveTx = await usdcContract.approve(MOCK_DEX_ADDRESS, usdcAmountToSwap);
       await approveTx.wait();
 
-      console.log(`[Web3] Sending Tx: swapETHForMON using ${ethAmountToSwapStr} ETH...`);
-      const tx = await dexContract.swapETHForMON(ethAmountToSwap, {
+      console.log(`[Web3] Sending Tx: swapUSDCForMON using ${usdcAmountToSwapStr} USDC...`);
+      const tx = await dexContract.swapUSDCForMON(usdcAmountToSwap, {
         gasLimit: 200000
       });
       console.log(`[Web3] Tx broadcasted: ${tx.hash}. Waiting confirmation...`);
@@ -205,7 +225,7 @@ export async function executeDEXSwap(
       return {
         success: true,
         txHash: receipt!.hash,
-        amountIn: `${ethAmountToSwapStr} ETH`,
+        amountIn: `${usdcAmountToSwapStr} USDC`,
         amountOut: `${monAmountToSwapStr} MON`,
         simulated: false,
         agentAddress: agentWallet.address
@@ -216,11 +236,11 @@ export async function executeDEXSwap(
     console.log('[Web3] Simulating transaction signature locally...');
 
     const fakeTxHash = ethers.keccak256(
-      ethers.toUtf8Bytes(`MOCK_SWAP_${Date.now()}_ETH_MON_${direction}_${agentWallet.address}`)
+      ethers.toUtf8Bytes(`MOCK_SWAP_${Date.now()}_USDC_MON_${direction}_${agentWallet.address}`)
     );
 
-    const amountIn = direction === 'SELL' ? `${monAmountToSwapStr} MON` : `${ethAmountToSwapStr} ETH`;
-    const amountOut = direction === 'SELL' ? `${ethAmountToSwapStr} ETH` : `${monAmountToSwapStr} MON`;
+    const amountIn = direction === 'SELL' ? `${monAmountToSwapStr} MON` : `${usdcAmountToSwapStr} USDC`;
+    const amountOut = direction === 'SELL' ? `${usdcAmountToSwapStr} USDC` : `${monAmountToSwapStr} MON`;
 
     return {
       success: true,
@@ -292,53 +312,60 @@ export async function withdrawMON(recipientAddress: string, amount: string): Pro
 }
 
 /**
- * @dev Withdraw Mock ETH ERC20 faucet tokens from the agent burner wallet back to the user.
+ * @dev Withdraw USDC faucet tokens from the agent burner wallet back to the user.
  */
-export async function withdrawETH(recipientAddress: string, amount: string): Promise<TradeResult> {
+export async function withdrawUSDC(recipientAddress: string, amount: string): Promise<TradeResult> {
   if (!agentWallet) {
     throw new Error('Agent wallet not deployed/initialized');
   }
   
-  console.log(`[Web3] Initiating Mock ETH withdrawal of ${amount} ETH to: ${recipientAddress}`);
-  const parsedAmount = ethers.parseEther(amount);
+  console.log(`[Web3] Initiating USDC withdrawal of ${amount} USDC to: ${recipientAddress}`);
   
   try {
     if (!provider) {
       throw new Error('RPC Provider offline');
     }
 
-    const ethContract = new ethers.Contract(MOCK_ETH_ADDRESS, ERC20_ABI, agentWallet);
-    const balance = await ethContract.balanceOf(agentWallet.address);
-    if (balance < parsedAmount) {
-      throw new Error(`Insufficient ETH. Agent balance: ${ethers.formatEther(balance)} ETH. Requested: ${amount} ETH.`);
+    const usdcContract = new ethers.Contract(MOCK_USDC_ADDRESS, ERC20_ABI, agentWallet);
+    let decimals = 18;
+    try {
+      decimals = await usdcContract.decimals();
+    } catch (e) {
+      decimals = 6;
     }
     
-    console.log(`[Web3] Sending Tx: Transferring ${amount} Mock ETH to ${recipientAddress}...`);
-    const tx = await ethContract.transfer(recipientAddress, parsedAmount);
-    console.log(`[Web3] ETH Withdrawal tx broadcasted: ${tx.hash}`);
+    const parsedAmount = ethers.parseUnits(amount, decimals);
+    const balance = await usdcContract.balanceOf(agentWallet.address);
+    if (balance < parsedAmount) {
+      throw new Error(`Insufficient USDC. Agent balance: ${ethers.formatUnits(balance, decimals)} USDC. Requested: ${amount} USDC.`);
+    }
+    
+    console.log(`[Web3] Sending Tx: Transferring ${amount} USDC to ${recipientAddress}...`);
+    const tx = await usdcContract.transfer(recipientAddress, parsedAmount);
+    console.log(`[Web3] USDC Withdrawal tx broadcasted: ${tx.hash}`);
     const receipt = await tx.wait();
     
     return {
       success: true,
       txHash: receipt!.hash,
-      amountIn: `${amount} ETH`,
-      amountOut: `${amount} ETH`,
+      amountIn: `${amount} USDC`,
+      amountOut: `${amount} USDC`,
       simulated: false,
       agentAddress: agentWallet.address
     };
   } catch (error: any) {
-    console.warn(`[Web3] ETH withdrawal failed or bypassed: ${error.message || error}`);
-    console.log('[Web3] Simulating ETH withdrawal locally...');
+    console.warn(`[Web3] USDC withdrawal failed or bypassed: ${error.message || error}`);
+    console.log('[Web3] Simulating USDC withdrawal locally...');
     
     const fakeTxHash = ethers.keccak256(
-      ethers.toUtf8Bytes(`MOCK_WITHDRAW_ETH_${Date.now()}_${amount}_${recipientAddress}`)
+      ethers.toUtf8Bytes(`MOCK_WITHDRAW_USDC_${Date.now()}_${amount}_${recipientAddress}`)
     );
     
     return {
       success: true,
       txHash: fakeTxHash,
-      amountIn: `${amount} ETH`,
-      amountOut: `${amount} ETH`,
+      amountIn: `${amount} USDC`,
+      amountOut: `${amount} USDC`,
       simulated: true,
       agentAddress: agentWallet.address
     };

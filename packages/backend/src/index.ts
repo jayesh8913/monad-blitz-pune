@@ -6,12 +6,12 @@ import { analyzeTranscript } from './utils/ai.js';
 import { 
   getAgentAddress, 
   getAgentBalance, 
-  getAgentETHBalance,
+  getAgentUSDCBalance,
   executeDEXSwap, 
   isAgentWalletDeployed, 
   deployAgentWallet,
   withdrawMON,
-  withdrawETH,
+  withdrawUSDC,
   mintAgentNFT
 } from './utils/web3.js';
 import { logToLedger } from './utils/logger.js';
@@ -30,13 +30,13 @@ app.get('/api/agent-wallet', async (req, res) => {
     const isDeployed = isAgentWalletDeployed();
     const address = getAgentAddress();
     const balance = isDeployed ? await getAgentBalance() : '0.0';
-    const ethBalance = isDeployed ? await getAgentETHBalance() : '0.0';
+    const usdcBalance = isDeployed ? await getAgentUSDCBalance() : '0.0';
     res.json({ 
       isDeployed, 
       address, 
       balance, 
-      ethBalance,
-      tokenAddress: process.env.MOCK_ETH_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+      usdcBalance,
+      tokenAddress: process.env.MOCK_USDC_ADDRESS || '0x754704Bc059F8C67012fEd69BC8A327a5aafb603',
       dexAddress: process.env.MOCK_DEX_ADDRESS || '0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199',
       nftAddress: process.env.MOCK_NFT_ADDRESS || '0x9F1F64848dcf456f9661411D4ceD1C1c1C11199'
     });
@@ -55,19 +55,19 @@ app.post('/api/agent/deploy', (req, res) => {
   }
 });
 
-// Endpoint to withdraw native MON or Mock ETH from agent proxy back to user
+// Endpoint to withdraw native MON or USDC from agent proxy back to user
 app.post('/api/agent/withdraw', async (req, res) => {
-  const { recipientAddress, amount, token } = req.body; // token: 'MON' | 'ETH'
+  const { recipientAddress, amount, token } = req.body; // token: 'MON' | 'USDC'
   if (!recipientAddress || !amount) {
     return res.status(400).json({ error: 'Missing recipientAddress or amount' });
   }
 
-  const selectedToken = token === 'ETH' ? 'ETH' : 'MON';
+  const selectedToken = token === 'USDC' ? 'USDC' : 'MON';
 
   try {
     let result;
-    if (selectedToken === 'ETH') {
-      result = await withdrawETH(recipientAddress, amount);
+    if (selectedToken === 'USDC') {
+      result = await withdrawUSDC(recipientAddress, amount);
     } else {
       result = await withdrawMON(recipientAddress, amount);
     }
@@ -89,34 +89,7 @@ app.post('/api/agent/withdraw', async (req, res) => {
   }
 });
 
-// Manual trade action API endpoint (buy/sell MONAD via MockETH)
-app.post('/api/trade', async (req, res) => {
-  const { action, amount } = req.body; // action: 'BUY' | 'SELL', amount: string/number
-  
-  if (!action || !['BUY', 'SELL'].includes(action)) {
-    return res.status(400).json({ error: 'Invalid action. Must be BUY or SELL.' });
-  }
-
-  try {
-    const amountVal = parseFloat(amount || '0.01');
-    const result = await executeDEXSwap('MON', action, amountVal);
-
-    // Log to local context.md ledger
-    logToLedger({
-      timestamp: new Date().toISOString(),
-      youtubeUrl: 'MANUAL_TRADE_API',
-      tokenTicker: 'MON',
-      sentiment: action === 'BUY' ? 'BULLISH' : 'BEARISH',
-      confidence: 1.0,
-      actionTxHash: result.txHash,
-      justification: `Manual API trade: ${action} MON (Value: ${amountVal})`
-    });
-
-    res.json({ success: true, result });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Manual swap failed' });
-  }
-});
+// Manual trade action API endpoint has been taken down as per user request.
 
 // Process YouTube URL, analyze transcript, and swap native MON and Mock ETH on MockDEX
 app.post('/api/analyze', async (req, res) => {
@@ -154,7 +127,7 @@ app.post('/api/analyze', async (req, res) => {
     // Trigger swap based on sentiment
     if ((isBullish || isBearish) && isConfident) {
       tradeExecuted = true;
-      // BUY = swap MockETH -> MON (Bullish), SELL = swap MON -> MockETH (Bearish)
+      // BUY = swap USDC -> MON (Bullish), SELL = swap MON -> USDC (Bearish)
       const direction = isBullish ? 'BUY' : 'SELL';
       
       console.log(`[API] Triggering autonomous swap on Monad Testnet: ${direction} MON`);
@@ -217,6 +190,6 @@ app.listen(PORT, () => {
     console.log(`Agent Burner Wallet: ${getAgentAddress()}`);
   }
   console.log(`Mock DEX Target: ${process.env.MOCK_DEX_ADDRESS || '0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199'}`);
-  console.log(`Mock ETH Faucet Target: ${process.env.MOCK_ETH_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3'}`);
+  console.log(`Mock USDC Faucet Target: ${process.env.MOCK_USDC_ADDRESS || '0x754704Bc059F8C67012fEd69BC8A327a5aafb603'}`);
   console.log(`==================================================`);
 });

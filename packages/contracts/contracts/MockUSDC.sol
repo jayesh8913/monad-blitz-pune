@@ -2,13 +2,13 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title MockETH
- * @dev A mock ERC20 contract representing Faucet ETH on Monad Testnet for testing narrative swaps.
+ * @title MockUSDC
+ * @dev A mock ERC20 contract representing USDC on Monad Testnet for testing narrative swaps.
  */
-contract MockETH {
-    string public name = "Mock Faucet ETH";
-    string public symbol = "ETH";
-    uint8 public decimals = 18;
+contract MockUSDC {
+    string public name = "Mock USDC";
+    string public symbol = "USDC";
+    uint8 public decimals = 6; // 6 decimals for USDC!
     uint256 public totalSupply;
 
     mapping(address => uint256) public balanceOf;
@@ -19,7 +19,7 @@ contract MockETH {
 
     /**
      * @dev Free faucet minting for testing.
-     * @param amount The amount of Mock ETH tokens to mint.
+     * @param amount The amount of USDC tokens to mint.
      */
     function mintFaucet(uint256 amount) external {
         balanceOf[msg.sender] += amount;

@@ -23,6 +23,10 @@ export function logToLedger(entry: LedgerEntry) {
     const cleanUrl = entry.youtubeUrl.replace(/[\r\n|]+/g, ' ').trim();
     const cleanTx = entry.actionTxHash.replace(/[\r\n|]+/g, ' ').trim();
 
+    console.log(`[Ledger Log] ${entry.timestamp} | URL: ${cleanUrl} | Ticker: ${cleanTicker} | Sentiment: ${cleanSentiment} | Confidence: ${entry.confidence.toFixed(2)} | Tx: ${cleanTx} | Justification: ${cleanJustification}`);
+    
+    // Persistent context ledger has been taken down as per user request.
+    /*
     const row = `| ${entry.timestamp} | ${cleanUrl} | ${cleanTicker} | ${cleanSentiment} | ${entry.confidence.toFixed(2)} | ${cleanTx} | ${cleanJustification} |\n`;
     
     // Recreate headers if file was deleted
@@ -33,7 +37,8 @@ export function logToLedger(entry: LedgerEntry) {
     
     fs.appendFileSync(CONTEXT_PATH, row);
     console.log(`[Ledger] Logged entry for ${cleanTicker} successfully to context.md`);
+    */
   } catch (error) {
-    console.error('[Ledger] Failed to write to context.md:', error);
+    console.error('[Ledger] Failed to log entry:', error);
   }
 }
