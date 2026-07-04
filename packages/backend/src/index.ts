@@ -1,0 +1,222 @@
+import express from 'express';
+import cors from 'cors';
+import * as dotenv from 'dotenv';
+import { fetchYoutubeTranscript } from './utils/transcript.js';
+import { analyzeTranscript } from './utils/ai.js';
+import { 
+  getAgentAddress, 
+  getAgentBalance, 
+  getAgentETHBalance,
+  executeDEXSwap, 
+  isAgentWalletDeployed, 
+  deployAgentWallet,
+  withdrawMON,
+  withdrawETH,
+  mintAgentNFT
+} from './utils/web3.js';
+import { logToLedger } from './utils/logger.js';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+app.use(cors());
+app.use(express.json());
+
+// Endpoint to retrieve agent burner wallet details and balances
+app.get('/api/agent-wallet', async (req, res) => {
+  try {
+    const isDeployed = isAgentWalletDeployed();
+    const address = getAgentAddress();
+    const balance = isDeployed ? await getAgentBalance() : '0.0';
+    const ethBalance = isDeployed ? await getAgentETHBalance() : '0.0';
+    res.json({ 
+      isDeployed, 
+      address, 
+      balance, 
+      ethBalance,
+      tokenAddress: process.env.MOCK_ETH_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+      dexAddress: process.env.MOCK_DEX_ADDRESS || '0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199',
+      nftAddress: process.env.MOCK_NFT_ADDRESS || '0x9F1F64848dcf456f9661411D4ceD1C1c1C11199'
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch agent wallet details' });
+  }
+});
+
+// Endpoint to deploy/initialize a new AI agent wallet
+app.post('/api/agent/deploy', (req, res) => {
+  try {
+    const result = deployAgentWallet();
+    res.json({ success: true, address: result.address });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to deploy agent wallet' });
+  }
+});
+
+// Endpoint to withdraw native MON or Mock ETH from agent proxy back to user
+app.post('/api/agent/withdraw', async (req, res) => {
+  const { recipientAddress, amount, token } = req.body; // token: 'MON' | 'ETH'
+  if (!recipientAddress || !amount) {
+    return res.status(400).json({ error: 'Missing recipientAddress or amount' });
+  }
+
+  const selectedToken = token === 'ETH' ? 'ETH' : 'MON';
+
+  try {
+    let result;
+    if (selectedToken === 'ETH') {
+      result = await withdrawETH(recipientAddress, amount);
+    } else {
+      result = await withdrawMON(recipientAddress, amount);
+    }
+    
+    // Log to local context.md ledger
+    logToLedger({
+      timestamp: new Date().toISOString(),
+      youtubeUrl: 'WITHDRAWAL_ACTION',
+      tokenTicker: selectedToken,
+      sentiment: 'NEUTRAL',
+      confidence: 1.0,
+      actionTxHash: result.txHash,
+      justification: `Withdrew ${amount} ${selectedToken} to user address ${recipientAddress}`
+    });
+
+    res.json({ success: true, result });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Withdrawal execution failed' });
+  }
+});
+
+// Manual trade action API endpoint (buy/sell MONAD via MockETH)
+app.post('/api/trade', async (req, res) => {
+  const { action, amount } = req.body; // action: 'BUY' | 'SELL', amount: string/number
+  
+  if (!action || !['BUY', 'SELL'].includes(action)) {
+    return res.status(400).json({ error: 'Invalid action. Must be BUY or SELL.' });
+  }
+
+  try {
+    const amountVal = parseFloat(amount || '0.01');
+    const result = await executeDEXSwap('MON', action, amountVal);
+
+    // Log to local context.md ledger
+    logToLedger({
+      timestamp: new Date().toISOString(),
+      youtubeUrl: 'MANUAL_TRADE_API',
+      tokenTicker: 'MON',
+      sentiment: action === 'BUY' ? 'BULLISH' : 'BEARISH',
+      confidence: 1.0,
+      actionTxHash: result.txHash,
+      justification: `Manual API trade: ${action} MON (Value: ${amountVal})`
+    });
+
+    res.json({ success: true, result });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Manual swap failed' });
+  }
+});
+
+// Process YouTube URL, analyze transcript, and swap native MON and Mock ETH on MockDEX
+app.post('/api/analyze', async (req, res) => {
+  const { youtubeUrl } = req.body;
+  
+  if (!youtubeUrl) {
+    return res.status(400).json({ error: 'Missing youtubeUrl in request body' });
+  }
+
+  if (!isAgentWalletDeployed()) {
+    return res.status(400).json({ error: 'Agent wallet is not initialized. Please deploy the agent wallet first.' });
+  }
+
+  console.log(`\n--- [API POST /api/analyze] Received request for: ${youtubeUrl} ---`);
+  
+  try {
+    // 1. Fetch transcript
+    const transcript = await fetchYoutubeTranscript(youtubeUrl);
+    const transcriptSnippet = transcript.slice(0, 300) + '...';
+
+    // 2. Query Groq AI Model
+    const analysis = await analyzeTranscript(transcript);
+    console.log(`[API] AI Sentiment Analysis:`, analysis);
+
+    // 3. Evaluate trading criteria
+    const isBullish = analysis.sentiment === 'BULLISH';
+    const isBearish = analysis.sentiment === 'BEARISH';
+    const isConfident = analysis.confidence >= 0.75;
+    
+    let tradeResult = null;
+    let tradeExecuted = false;
+    let nftResult = null;
+    let nftMinted = false;
+
+    // Trigger swap based on sentiment
+    if ((isBullish || isBearish) && isConfident) {
+      tradeExecuted = true;
+      // BUY = swap MockETH -> MON (Bullish), SELL = swap MON -> MockETH (Bearish)
+      const direction = isBullish ? 'BUY' : 'SELL';
+      
+      console.log(`[API] Triggering autonomous swap on Monad Testnet: ${direction} MON`);
+      tradeResult = await executeDEXSwap(
+        'MON',
+        direction,
+        analysis.confidence
+      );
+
+      // Autonomously mint narrative badge NFT
+      try {
+        nftMinted = true;
+        nftResult = await mintAgentNFT(youtubeUrl);
+        console.log(`[API] Autonomously minted commemorative NFT. Tx: ${nftResult.txHash}`);
+      } catch (nftError) {
+        console.warn('[API] Autonomous NFT minting failed:', nftError);
+      }
+    } else {
+      console.log('[API] Sentiment conditions not met for executing automated trade.');
+    }
+
+    // 4. Log to local context.md ledger
+    const timestamp = new Date().toISOString();
+    const txHash = tradeResult?.success ? tradeResult.txHash : (tradeExecuted ? 'FAILED' : 'NO_TRADE');
+    
+    logToLedger({
+      timestamp,
+      youtubeUrl,
+      tokenTicker: 'MON',
+      sentiment: analysis.sentiment,
+      confidence: analysis.confidence,
+      actionTxHash: txHash,
+      justification: analysis.justification
+    });
+
+    // 5. Send response to frontend client, returning full transcript for storage
+    res.json({
+      youtubeUrl,
+      transcript,
+      transcriptSnippet,
+      analysis,
+      tradeExecuted,
+      tradeResult,
+      nftMinted,
+      nftResult,
+      timestamp
+    });
+
+  } catch (error: any) {
+    console.error('[API] Error in analysis pipeline:', error);
+    res.status(500).json({ error: error.message || 'Pipeline processing failed' });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`==================================================`);
+  console.log(`Monad Autonomous Agent Backend online on port ${PORT}`);
+  console.log(`Agent Deployed status: ${isAgentWalletDeployed()}`);
+  if (isAgentWalletDeployed()) {
+    console.log(`Agent Burner Wallet: ${getAgentAddress()}`);
+  }
+  console.log(`Mock DEX Target: ${process.env.MOCK_DEX_ADDRESS || '0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199'}`);
+  console.log(`Mock ETH Faucet Target: ${process.env.MOCK_ETH_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3'}`);
+  console.log(`==================================================`);
+});
