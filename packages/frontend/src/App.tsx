@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 // Configuration Defaults
-const BACKEND_URL = 'http://localhost:3001';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 const MONAD_CHAIN_ID = '0x279f'; // 10143 in decimal
 const MOCK_DEX_ADDRESS = '0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199';
 const MOCK_USDC_ADDRESS = '0x534b2f3A21130d7a60830c2Df862319e593943A3';
