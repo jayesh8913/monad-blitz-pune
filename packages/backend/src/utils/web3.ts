@@ -151,8 +151,8 @@ export async function executeDEXSwap(
 
   console.log(`[Web3] Automated Trade: MONAD | Action: ${direction} MON | Confidence: ${confidence}`);
   
-  const monAmountToSwapStr = (0.01 * confidence).toFixed(4); // MON scale
-  const usdcAmountToSwapStr = (parseFloat(monAmountToSwapStr) / 10).toFixed(6); // 10 MON = 1 USDC rate
+  const monAmountToSwapStr = (2.5 * confidence).toFixed(4); // MON scale (increased volume!)
+  const usdcAmountToSwapStr = (parseFloat(monAmountToSwapStr) / 2.5).toFixed(6); // 2.5 MON = 1 USDC rate
   
   try {
     if (!provider) {

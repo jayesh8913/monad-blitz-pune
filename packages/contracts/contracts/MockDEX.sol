@@ -41,9 +41,9 @@ contract MockDEX {
         // Transfer USDC to this contract
         require(usdcToken.transferFrom(msg.sender, address(this), usdcAmountIn), "DEX: USDC transfer failed");
         
-        // Exchange rate: 1 USDC = 10 MON (USDC has 6 decimals, MON has 18 decimals)
-        // monAmountOut = usdcAmountIn * 10 * 1e12
-        uint256 monAmountOut = usdcAmountIn * 10 * 1e12;
+        // Exchange rate: 1 USDC = 2.5 MON (USDC has 6 decimals, MON has 18 decimals)
+        // monAmountOut = usdcAmountIn * 2.5 * 1e12 = (usdcAmountIn * 5 * 1e12) / 2
+        uint256 monAmountOut = (usdcAmountIn * 5 * 1e12) / 2;
         
         require(address(this).balance >= monAmountOut, "DEX: Insufficient MON liquidity in DEX pool");
         payable(msg.sender).transfer(monAmountOut);
@@ -64,9 +64,9 @@ contract MockDEX {
     function swapMONForUSDC() external payable {
         require(msg.value > 0, "DEX: Insufficient MON sent");
 
-        // Exchange rate: 10 MON = 1 USDC (MON has 18 decimals, USDC has 6 decimals)
-        // usdcAmountOut = msg.value / 10 / 1e12
-        uint256 usdcAmountOut = msg.value / 10 / 1e12;
+        // Exchange rate: 2.5 MON = 1 USDC (MON has 18 decimals, USDC has 6 decimals)
+        // usdcAmountOut = msg.value * 0.4 / 1e12 = (msg.value * 2) / 5 / 1e12
+        uint256 usdcAmountOut = (msg.value * 2) / 5 / 1e12;
         
         IMockUSDC usdcToken = IMockUSDC(mockUSDCAddress);
         require(usdcToken.balanceOf(address(this)) >= usdcAmountOut, "DEX: Insufficient USDC liquidity in DEX pool");
