@@ -120,6 +120,7 @@ export async function getAgentUSDCBalance(): Promise<string> {
     const balance = await usdcContract.balanceOf(agentWallet.address);
     return ethers.formatUnits(balance, decimals);
   } catch (err) {
+    console.error('[Web3] Failed to query USDC balance:', err);
     return '0.0 (error)';
   }
 }
