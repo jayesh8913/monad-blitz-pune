@@ -24,6 +24,7 @@ The platform is structured as an EVM monorepo with three core workspaces:
 * **Agentic Commerce (x402 & ERC-8004)**:
   * **x402 Payment Middleware**: Integrates HTTP 402 Payment Required middleware in `src/utils/x402.ts` to gate premium endpoints (verifying on-chain USDC payment details).
   * **ERC-8004 Identity Manager**: Handles agent identity verification and registration calling the `AgentRegistry` contract via `src/utils/erc8004.ts`.
+  * **Social Whale Scanner**: Aggregates, parses, and synthesizes high-influence Twitter and Reddit whale feeds (`src/utils/social.ts`) to trigger autonomous sentiment swaps.
   * **Sandbox Server**: Hosted on `src/sandbox.ts` (Port 3002) alongside `src/test-sandbox.ts` to test x402 payment loops and ERC-8004 registration separately.
 
 ### 3. ⛓️ Smart Contracts (`packages/contracts`)
