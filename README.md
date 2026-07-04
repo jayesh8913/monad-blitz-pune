@@ -1,4 +1,4 @@
-# 🤖 Monad Sentiment Quant & NFT Hub
+# 🤖 Monad Sentiment Matrix & NFT Hub
 
 An autonomous video-to-chain quantitative trading and commemorative NFT minting platform built natively for the **Monad Testnet**. 
 

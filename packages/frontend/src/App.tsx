@@ -770,7 +770,7 @@ export default function App() {
             <span className="text-xs uppercase font-bold tracking-widest text-[#666]">Monad Hackathon v2</span>
           </div>
           <h1 className="text-3xl font-black tracking-tight uppercase">
-            Monad <span className="text-monad-purple">Sentiment</span> Quant
+            Monad <span className="text-monad-purple">Sentiment</span> Matrix
           </h1>
           <p className="text-sm mt-1 text-[#444] font-medium max-w-lg">
             Autonomous video-to-chain trading and NFT minting platform built for the Monad Testnet.
@@ -1843,7 +1843,7 @@ export default function App() {
 
       {/* FOOTER */}
       <footer className="mt-auto pt-16 pb-6 text-center text-xs font-semibold text-[#888] border-t border-charcoal/20">
-        <p>MONAD TESTNET SENTIMENT QUANT TRADING AGENT • BUILT FOR MONAD BLITZ v2 HACKATHON</p>
+        <p>MONAD TESTNET SENTIMENT MATRIX TRADING AGENT • BUILT FOR MONAD BLITZ v2 HACKATHON</p>
       </footer>
 
     </div>

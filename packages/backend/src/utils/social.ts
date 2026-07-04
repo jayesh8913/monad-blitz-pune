@@ -13,17 +13,72 @@ export interface SocialPost {
  * Fetches recent tweets from specified high-profile Web3 whale handles.
  */
 export async function fetchWhaleTweets(handles: string[]): Promise<SocialPost[]> {
-  try {
-    // If user has a configured Bearer Token for X (Twitter) API
-    const TWITTER_BEARER_TOKEN = process.env.TWITTER_BEARER_TOKEN;
-    if (TWITTER_BEARER_TOKEN) {
-      console.log(`[Social] Fetching real tweets from X API for handles: ${handles.join(', ')}...`);
-      // Standard v2 Twitter API search endpoint
-      // const response = await fetch(...)
-      // return parsedPosts;
+  const APIFY_API_TOKEN = process.env.APIFY_API_TOKEN;
+  
+  if (APIFY_API_TOKEN) {
+    console.log(`[Social] Fetching real tweets from Apify Actor V38PZzpEgOfeeWvZY for handles: ${handles.join(', ')}...`);
+    try {
+      // 1. Run the actor synchronously using wait=60 parameter
+      const runUrl = `https://api.apify.com/v2/acts/V38PZzpEgOfeeWvZY/runs?wait=60&token=${APIFY_API_TOKEN}`;
+      
+      const cleanHandles = handles.map(h => h.replace('@', ''));
+      const payload = {
+        handles: cleanHandles,
+        queries: cleanHandles,
+        startUrls: cleanHandles.map(h => `https://twitter.com/${h}`),
+        maxItems: 5,
+        tweetsDesired: 5,
+        tweetsLimit: 5
+      };
+
+      const response = await fetch(runUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Apify Actor run initiation failed with status: ${response.status}`);
+      }
+
+      const runResult = await response.json();
+      const status = runResult.data?.status;
+      const datasetId = runResult.data?.defaultDatasetId;
+
+      console.log(`[Social] Apify Actor run status: ${status}, Dataset ID: ${datasetId}`);
+
+      if (datasetId) {
+        // 2. Fetch the scraped dataset items
+        const datasetUrl = `https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_API_TOKEN}`;
+        const datasetResponse = await fetch(datasetUrl);
+        if (datasetResponse.ok) {
+          const items = await datasetResponse.json() as any[];
+          console.log(`[Social] Retrieved ${items.length} items from Apify dataset.`);
+          
+          if (items.length > 0) {
+            const mappedPosts: SocialPost[] = items.map(item => {
+              const screenName = item.user?.screen_name || item.screen_name || item.author || 'unknown';
+              const text = item.full_text || item.text || item.content || '';
+              const rawTime = item.created_at || item.createdAt || item.timestamp || new Date().toISOString();
+              const url = item.twitterUrl || item.url || `https://x.com/${screenName}/status/${item.id || Date.now()}`;
+              
+              return {
+                source: 'TWITTER',
+                author: `@${screenName}`,
+                content: text,
+                timestamp: new Date(rawTime).toISOString(),
+                url
+              };
+            });
+            return mappedPosts;
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Social] Failed to fetch real tweets via Apify, falling back to simulated data.', err.message || err);
     }
-  } catch (err) {
-    console.warn('[Social] Failed to fetch real tweets, falling back to simulated data.', err);
   }
 
   // Fallback to high-fidelity mock data representing top Monad whales

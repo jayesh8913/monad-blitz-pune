@@ -1,6 +1,6 @@
 # Monad Autonomous AI Agent Context & Execution Ledger
 
-This document registers the complete architectural context, configuration states, and live execution history of the **Monad Sentiment Quant & NFT Hub** platform created for the **Monad Testnet Hackathon**.
+This document registers the complete architectural context, configuration states, and live execution history of the **Monad Sentiment Matrix & NFT Hub** platform created for the **Monad Testnet Hackathon**.
 
 ---
 
